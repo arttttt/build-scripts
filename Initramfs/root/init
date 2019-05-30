@@ -1,0 +1,43 @@
+#!/sbin/busybox sh
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+BB=/sbin/busybox
+
+# For debugging
+#set -x
+
+$BB mkdir -p /etc
+
+$BB mkdir -p /proc
+$BB mount -t proc proc /proc
+$BB mkdir -p /sys
+$BB mount -t sysfs sysfs /sys
+$BB mkdir -p /dev
+$BB mount -t devtmpfs devtmpfs /dev
+
+# Disable kernel messages
+echo 0 > /proc/sys/kernel/printk
+
+SYSPART=/dev/mmcblk0p23
+#CACHEPART=/dev/mmcblk0p24
+#DATAPART=/dev/mmcblk0p25
+
+$BB mkdir -p /root
+#$BB mkdir -p /root/data
+#$BB mkdir -p /root/cache
+
+#$BB mount -t ext4 -o noatime,nodiratime $DATAPART /root/data
+#$BB mount -t ext4 -o noatime,nodiratime $CACHEPART /root/cache
+$BB mount -t ext4 -o noatime,nodiratime $SYSPART /root/
+
+$BB mkdir -p /root/dev
+$BB mkdir -p /root/sys
+$BB mkdir -p /root/proc
+
+$BB mount -o move /dev /root/dev
+$BB mount -o move /sys /root/sys
+$BB mount -o move /proc /root/proc
+
+exec $BB switch_root /root /sbin/init
+
+echo "Something bad happened... Good luck!"
+$BB sh

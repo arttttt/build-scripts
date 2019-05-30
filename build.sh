@@ -2,10 +2,10 @@
 
 export ARCH="arm"
 export KBUILD_BUILD_HOST=$(lsb_release -d | awk -F":"  '{print $2}' | sed -e 's/^[ \t]*//' | sed -r 's/[ ]+/-/g')
-export KBUILD_BUILD_USER="arttttt"
+export KBUILD_BUILD_USER="$USER"
 
 clean_build=0
-config="tegra12_android_defconfig"
+config="tegra12_defconfig"
 dtb_name="tegra124-mocha.dtb"
 dtb_only=0
 kernel_name=$(git rev-parse --abbrev-ref HEAD)
@@ -35,40 +35,17 @@ function printfc() {
 	fi;
 }
 
-function generate_version()
+function make_img()
 {
-	if [[ -f "$KERNEL_DIR/.git/HEAD"  &&  -f "$KERNEL_DIR/anykernel/anykernel.sh" ]]; then
-		local updated_kernel_name
-		eval "$(awk -F"="  '/kernel.string/{print "anykernel_name="$2}' $KERNEL_DIR/anykernel/anykernel.sh)"
-		eval "$(echo $kernel_name | awk -F"-"  '{print "current_branch="$2}')"
-		if [[ "$current_branch" != "stable" ]]; then
-			if [[ ! -f "$KERNEL_DIR/version" ]]; then
-				echo "build_number=0" > $KERNEL_DIR/version
-			fi;
-
-			awk -F"="  '{$2+=1; print $1"="$2}' $KERNEL_DIR/version > tmpfile
-			mv tmpfile $KERNEL_DIR/version
-			eval "$(awk -F"="  '{print "current_build="$2}' $KERNEL_DIR/version)"
-			export LOCALVERSION="-$current_branch-build$current_build"
-			updated_kernel_name=$kernel_name"-build"$current_build
-		else
-			updated_kernel_name=$kernel_name
-		fi;
-			sed -i s/$anykernel_name/$updated_kernel_name/ $KERNEL_DIR/anykernel/anykernel.sh
-	fi;
-}
-
-function make_zip()
-{
-	if [[ -d "$KERNEL_DIR/anykernel" ]]; then
-		printfc "\nCreating zip archive\n\n" $HEAD
+	if [[ -d "$KERNEL_DIR/Initramfs" ]]; then
+		printfc "\Creating boot.img\n\n" $HEAD
 	else
-		printfc "\Folder $KERNEL_DIR/anykernel does not exist\n\n" $ERROR
+		printfc "\nFolder $KERNEL_DIR/Initramfs does not exist\n\n" $ERROR
 		return
 	fi;
 
 	if [[ -f "$ORIGINAL_OUTPUT_DIR/zImage" ]]; then
-		mv $ORIGINAL_OUTPUT_DIR/zImage $PWD/anykernel/kernel/
+		mv $ORIGINAL_OUTPUT_DIR/zImage $PWD/Initramfs/
 	else
 		if [[ $dtb_only == 0 ]]; then
 			printfc "File $ORIGINAL_OUTPUT_DIR/zImage does not exist\n\n" $ERROR
@@ -77,7 +54,7 @@ function make_zip()
 	fi
 
 	if [[ -f "$ORIGINAL_OUTPUT_DIR/dts/$dtb_name" ]]; then
-		mv $ORIGINAL_OUTPUT_DIR/dts/$dtb_name $PWD/anykernel/kernel/dtb
+		mv $ORIGINAL_OUTPUT_DIR/dts/$dtb_name $PWD/Initramfs/dtb
 	else
 		if [[ $dtb_only == 0 ]]; then
 			printfc "File $ORIGINAL_OUTPUT_DIR/dts/$dtb_name does not exist\n\n" $ERROR
@@ -85,26 +62,10 @@ function make_zip()
 		fi
 	fi
 
-	cd $KERNEL_DIR/anykernel
-	local zip_name="$kernel_name($(date +'%d.%m.%Y-%H.%M')).zip"
-	zip -r $zip_name *
+	cd $KERNEL_DIR/Initramfs
 
-	if [[ -f "$PWD/$zip_name" ]]; then
-		if [[ ! -d "$OUTPUT_DIR" ]]; then
-			mkdir $OUTPUT_DIR
-		fi;
+	./build.sh
 
-		printfc "\n$zip_name created, moving to $OUTPUT_DIR" $HEAD
-		mv "$PWD/$zip_name" $OUTPUT_DIR
-
-		if [[ -f "$OUTPUT_DIR/$zip_name" ]]; then
-			echo
-			printfc "\Completed\n" $HEAD
-		fi
-	else
-		printfc "\nCould not create archive\n" $ERROR
-		return
-	fi
 	cd $KERNEL_DIR
 }
 
@@ -118,20 +79,18 @@ function compile()
 		make mrproper
 	fi
 
-	generate_version
 	make $config
-	make -j$cpus_count ARCH=$ARCH CROSS_COMPILE=$toolchain zImage
+	make -j$threads ARCH=$ARCH CROSS_COMPILE=$toolchain zImage
 
 	printfc "\nCompiling device tree\n\n" $HEAD
 
-	make -j$cpus_count ARCH=$ARCH CROSS_COMPILE=$toolchain $dtb_name
+	make -j$threads ARCH=$ARCH CROSS_COMPILE=$toolchain $dtb_name
 
 	local end=$(date +%s)
 	local comp_time=$((end-start))
 	printf "\e[1;32m\nKernel compiled for %02d:%02d\n\e[0m" $((($comp_time/60)%60)) $(($comp_time%60))
-	printfc "Build number $current_build in the branch $current_branch\n" $HEAD
 
-	make_zip
+	make_img
 }
 
 function compile_dtb()
@@ -139,9 +98,8 @@ function compile_dtb()
 	clear
 
 	dtb_only=1
-	generate_version
 	make $config
-	make -j$cpus_count ARCH=$ARCH CROSS_COMPILE=$toolchain $dtb_name
+	make -j$threads ARCH=$ARCH CROSS_COMPILE=$toolchain $dtb_name
 
 	if [[ -f "$ORIGINAL_OUTPUT_DIR/dts/$dtb_name" ]]; then
 		mv $ORIGINAL_OUTPUT_DIR/dts/$dtb_name $PWD/anykernel/kernel/dtb
@@ -150,7 +108,7 @@ function compile_dtb()
 		return
 	fi
 
-	make_zip
+	make_img
 }
 
 function main()
